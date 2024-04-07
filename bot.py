@@ -18,6 +18,7 @@ class Button:
     TEXT_CHECK = "Проверка текста на ошибки"
     CONVERSATION = "Свободное общение с ботом"
     BACK = "Назад"
+    JOKE = "Шутки"
 
 
 class BotMessages:
@@ -26,6 +27,8 @@ class BotMessages:
     STATE_TRANSLATION = "Пришли мне текст для перевода"
     STATE_CONVERSATION = "Ну давай поговорим"
     STATE_TEXT_CHECK = "Пришли текст для проверки"
+    STATE_JOKE = "Пришли мне тему для шутки"
+    STATE_JOKE_CONTINUE = "Введи тему для следующей шутки или нажми кнопку \"Назад\""
     CHOOSE_BUTTON = "Пожалуйста, нажми на одно из кнопок ниже"
     PLACEHOLDER = "Ответ-заглушка для теста"
     COMMAND_UNKNOWN = "Я не знаю как на это реагировать, для того чтобы начать сначала используй команду /start"
@@ -36,6 +39,7 @@ class State(Enum):
     TEXT_CHECK = 2
     CONVERSATION = 3
     STARTED = 4
+    JOKE = 5
 
 
 currentState: State = State.STARTED
@@ -57,7 +61,7 @@ async def change_state(state: State, update: Update, context: ContextTypes.DEFAU
     currentState = state
     if state is State.STARTED:
         buttons = [[KeyboardButton(Button.TRANSLATION)], [KeyboardButton(Button.TEXT_CHECK)],
-                   [KeyboardButton(Button.CONVERSATION)]]
+                   [KeyboardButton(Button.CONVERSATION)], [KeyboardButton(Button.JOKE)]]
         await context.bot.send_message(chat_id=update.effective_chat.id,
                                        text=BotMessages.STATE_STARTED,
                                        reply_markup=ReplyKeyboardMarkup(buttons))
@@ -75,6 +79,11 @@ async def change_state(state: State, update: Update, context: ContextTypes.DEFAU
         await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_TEXT_CHECK,
                                        reply_markup=ReplyKeyboardMarkup(buttons))
 
+    if state is State.JOKE:
+        buttons = [[KeyboardButton(Button.BACK)]]
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_JOKE,
+                                       reply_markup=ReplyKeyboardMarkup(buttons))
+
 
 async def check_for_back_pressed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if Button.BACK in update.message.text:
@@ -90,9 +99,11 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         case State.TRANSLATION:
             await translate(update, context)
         case State.CONVERSATION:
-            await dummy_response(update, context)
+            await conversation(update, context)
         case State.TEXT_CHECK:
             await dummy_response(update, context)
+        case State.JOKE:
+            await joke(update, context)
 
 
 async def handle_buttons_pressed(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -103,9 +114,12 @@ async def handle_buttons_pressed(update: Update, context: ContextTypes.DEFAULT_T
             await change_state(State.TEXT_CHECK, update, context)
         case Button.CONVERSATION:
             await change_state(State.CONVERSATION, update, context)
+        case Button.JOKE:
+            await change_state(State.JOKE, update, context)
         case _:
             await context.bot.send_message(chat_id=update.effective_chat.id,
                                            text=BotMessages.CHOOSE_BUTTON)
+
 
 
 async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -143,17 +157,36 @@ def init_messages_context():
 async def conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global messagesHistory
     # Добавить в историю то что ввел пользователь
+    messagesHistory.append({"role": "user", "content": update.message.text})
+    completion = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=messagesHistory
+            # {"role": "system", "content": "You are a poetic assistant, skilled in explaining complex programming
+            # concepts with creative flair."},
+    )
+    # Добавить в историю то что отдал чат GPT
+    messagesHistory.append({"role": "assistant", "content": completion.choices[0].message.content})
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=completion.choices[0].message.content)
+
+
+async def joke(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await check_for_back_pressed(update, context):
+        return
+    # Добавить в историю то что ввел пользователь
+
     completion = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
+            #{"role": "system", "content": "You are a poetic assistant, skilled in explaining complex programming concepts with creative flair."},
+            {"role": "user", "content": "Напиши мне шутку о " + update.message.text}
+        ]
             # {"role": "system", "content": "You are a poetic assistant, skilled in explaining complex programming
             # concepts with creative flair."},
-            {"role": "user", "content": update.message.text}
-        ]
     )
     # Добавить в историю то что отдал чат GPT
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=completion.choices[0].message.content)
 
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=completion.choices[0].message.content)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_JOKE_CONTINUE)
 
 if __name__ == '__main__':
     application = ApplicationBuilder().token(os.environ.get('GPTBOT_API_KEY')).build()
