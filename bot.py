@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 
 
-GPT_MODEL_TYPE = "gpt-4-0125-preview"
+GPT_MODEL_TYPE = "gpt-3.5-turbo-0125"
 
 
 class Button:
