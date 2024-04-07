@@ -91,7 +91,7 @@ async def change_state(state: State, update: Update, context: ContextTypes.DEFAU
 
 
 async def check_for_back_pressed(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if Button.BACK in update.message.text:
+    if Button.BACK == update.message.text:
         await change_state(State.STARTED, update, context)
         return True
     return False
@@ -185,6 +185,8 @@ def init_messages_context():
 
 
 async def conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await check_for_back_pressed(update, context):
+        return
     global messagesHistory
     messagesHistory.append({"role": "user", "content": update.message.text})
     completion = client.chat.completions.create(
