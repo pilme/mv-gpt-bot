@@ -22,6 +22,7 @@ class State(Enum):
 
 
 currentState: State = State.STARTED
+messagesHistory = []
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -42,6 +43,8 @@ async def changeState(state: State, update: Update, context: ContextTypes.DEFAUL
         buttons = [[KeyboardButton(BACK)]]
         await context.bot.send_message(chat_id=update.effective_chat.id, text="Пришли мне текст для перевода",
                                        reply_markup=ReplyKeyboardMarkup(buttons))
+    if state is State.CONVERSATION:
+        initMessagesContext()
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -67,7 +70,14 @@ async def dummyResponse(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Ответ-заглушка для теста")
 
 
+def initMessagesContext():
+    global messagesHistory
+    messagesHistory = [{"role": "system", "content": "You are a poetic assistant, skilled in explaining complex programming concepts with creative flair."}]
+
+
 async def conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global messagesHistory
+    # Добавить в историю то что ввел пользователь
     completion = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
@@ -76,6 +86,7 @@ async def conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
             {"role": "user", "content": update.message.text}
         ]
     )
+    # Добавить в историю то что отдал чат GPT
     await context.bot.send_message(chat_id=update.effective_chat.id, text=completion.choices[0].message.content)
 
 
