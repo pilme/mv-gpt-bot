@@ -13,27 +13,35 @@ logging.basicConfig(
 
 TRANSLATION, TEXT_CHECK, CONVERSATION, BACK = "Перевод", "Проверка текста на ошибки", "Свободное общение с ботом", "Назад"
 
+
 class State(Enum):
     TRANSLATION = 1
     TEXT_CHECK = 2
     CONVERSATION = 3
     STARTED = 4
 
-currentState = State.STARTED
+
+currentState: State = State.STARTED
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="Привет, я туповатый бот, чтобы продолжить нажми на одну из кнопок")
+    await context.bot.send_message(chat_id=update.effective_chat.id,
+                                   text="Привет, я туповатый бот, чтобы продолжить нажми на одну из кнопок")
     await changeState(State.STARTED, update, context)
+
 
 async def changeState(state: State, update: Update, context: ContextTypes.DEFAULT_TYPE):
     global currentState
     currentState = state
     if state is State.STARTED:
         buttons = [[KeyboardButton(TRANSLATION)], [KeyboardButton(TEXT_CHECK)], [KeyboardButton(CONVERSATION)]]
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Нажми на одну из кнопок чтобы продолжить", reply_markup=ReplyKeyboardMarkup(buttons))
+        await context.bot.send_message(chat_id=update.effective_chat.id,
+                                       text="Нажми на одну из кнопок чтобы продолжить",
+                                       reply_markup=ReplyKeyboardMarkup(buttons))
     if state is State.TRANSLATION:
         buttons = [[KeyboardButton(BACK)]]
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Пришли мне текст для перевода", reply_markup=ReplyKeyboardMarkup(buttons))
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Пришли мне текст для перевода",
+                                       reply_markup=ReplyKeyboardMarkup(buttons))
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -46,14 +54,18 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if BACK in update.message.text:
         await changeState(State.STARTED, update, context)
 
+
 async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Переводим переводы")
+
 
 async def checkText(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Проверяем проверочки")
 
+
 async def dummyResponse(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Ответ-заглушка для теста")
+
 
 async def conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     completion = client.chat.completions.create(
@@ -65,6 +77,7 @@ async def conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     )
     await context.bot.send_message(chat_id=update.effective_chat.id, text=completion.choices[0].message.content)
+
 
 if __name__ == '__main__':
     application = ApplicationBuilder().token(os.environ.get('GPTBOT_API_KEY')).build()
