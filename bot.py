@@ -27,6 +27,7 @@ class BotMessages:
     STATE_TRANSLATION = "Пришли мне текст для перевода"
     STATE_CONVERSATION = "Ну давай поговорим"
     STATE_TEXT_CHECK = "Пришли текст для проверки"
+    STATE_TEXT_CHECK_CONTINUE = "Пришли еще один текст или нажми кнопку \"Назад\""
     STATE_JOKE = "Пришли мне тему для шутки"
     STATE_JOKE_CONTINUE = "Введи тему для следующей шутки или нажми кнопку \"Назад\""
     CHOOSE_BUTTON = "Пожалуйста, нажми на одно из кнопок ниже"
@@ -101,7 +102,7 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         case State.CONVERSATION:
             await conversation(update, context)
         case State.TEXT_CHECK:
-            await dummy_response(update, context)
+            await text_check(update, context)
         case State.JOKE:
             await joke(update, context)
 
@@ -167,6 +168,26 @@ async def conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Добавить в историю то что отдал чат GPT
     messagesHistory.append({"role": "assistant", "content": completion.choices[0].message.content})
     await context.bot.send_message(chat_id=update.effective_chat.id, text=completion.choices[0].message.content)
+
+
+async def text_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await check_for_back_pressed(update, context):
+        return
+    # Добавить в историю то что ввел пользователь
+
+    completion = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            #{"role": "system", "content": "You are a poetic assistant, skilled in explaining complex programming concepts with creative flair."},
+            {"role": "user", "content": f'Проверь этот текст на ошибки: "{update.message.text}"'}
+        ]
+            # {"role": "system", "content": "You are a poetic assistant, skilled in explaining complex programming
+            # concepts with creative flair."},
+    )
+    # Добавить в историю то что отдал чат GPT
+
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=completion.choices[0].message.content)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_TEXT_CHECK_CONTINUE)
 
 
 async def joke(update: Update, context: ContextTypes.DEFAULT_TYPE):
