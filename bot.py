@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import os
 
 from enum import Enum
@@ -13,7 +14,7 @@ logging.basicConfig(
 )
 
 
-GPT_MODEL_TYPE = "gpt-3.5-turbo-0125"
+GPT_MODEL_TYPE = "gpt-4-0125-preview"
 
 
 class Button:
@@ -83,7 +84,6 @@ async def change_state(state: State, update: Update, context: ContextTypes.DEFAU
         buttons = [[KeyboardButton(Button.BACK)]]
         await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_TEXT_CHECK,
                                        reply_markup=ReplyKeyboardMarkup(buttons))
-
     if state is State.JOKE:
         buttons = [[KeyboardButton(Button.BACK)]]
         await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_JOKE,
@@ -129,10 +129,14 @@ async def handle_buttons_pressed(update: Update, context: ContextTypes.DEFAULT_T
 async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_for_back_pressed(update, context):
         return
+
+    await context.bot.send_chat_action(update.effective_chat.id, 'typing')
+
     if "ru" in detect_language_with_langdetect(update.message.text)[0]:
         translated_text = translate_from_russian(update.message.text)
     else:
         translated_text = translate_to_russian(update.message.text)
+
     await context.bot.send_message(chat_id=update.effective_chat.id,
                                    text=translated_text)
     await context.bot.send_message(chat_id=update.effective_chat.id,
@@ -143,7 +147,7 @@ def translate_from_russian(text_to_translate: str):
     completion = client.chat.completions.create(
         model=GPT_MODEL_TYPE,
         messages=[
-            {"role": "user", "content": f'Переведи текст на английский: "{text_to_translate}"'}
+            {"role": "user", "content": f'Переведи этот текст на английский: "{text_to_translate}"'}
         ]
     )
     return completion.choices[0].message.content
@@ -153,7 +157,7 @@ def translate_to_russian(text_to_translate: str):
     completion = client.chat.completions.create(
         model=GPT_MODEL_TYPE,
         messages=[
-            {"role": "user", "content": f'Переведи текст на русский: "{text_to_translate}"'}
+            {"role": "user", "content": f'Переведи этот текст на русский: "{text_to_translate}"'}
         ]
     )
     return completion.choices[0].message.content
@@ -180,13 +184,17 @@ def detect_language_with_langdetect(line):
 def init_messages_context():
     global messagesHistory
     messagesHistory = [{"role": "system",
-                        "content": "Ты ассистент Хомяк, с радостью помогаешь людям, отвечая правильно и подробно на "
-                                   "их вопросы. Тебя создали 7 апреля 2024 года."}]
+                        "content": "Ты жизнерадостный в вежливый собеседник, который может ответить на любой вопрос и "
+                                   "объяснить любое явление развернуто и простыми словами. Тебя зовут Анатолий. Тебя "
+                                   "создала Мария Воронова в рамках школьного проекта 7 апреля 2024 года."}]
 
 
 async def conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_for_back_pressed(update, context):
         return
+
+    await context.bot.send_chat_action(update.effective_chat.id, 'typing')
+
     global messagesHistory
     messagesHistory.append({"role": "user", "content": update.message.text})
     completion = client.chat.completions.create(
@@ -194,12 +202,16 @@ async def conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
         messages=messagesHistory
     )
     messagesHistory.append({"role": "assistant", "content": completion.choices[0].message.content})
+
     await context.bot.send_message(chat_id=update.effective_chat.id, text=completion.choices[0].message.content)
 
 
 async def text_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_for_back_pressed(update, context):
         return
+
+    await context.bot.send_chat_action(update.effective_chat.id, 'typing')
+
     completion = client.chat.completions.create(
         model=GPT_MODEL_TYPE,
         messages=[
@@ -215,10 +227,12 @@ async def joke(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_for_back_pressed(update, context):
         return
 
+    await context.bot.send_chat_action(update.effective_chat.id, 'typing')
+
     completion = client.chat.completions.create(
         model=GPT_MODEL_TYPE,
         messages=[
-            {"role": "user", "content": "Напиши мне шутку о " + update.message.text}
+            {"role": "user", "content": f'Напиши мне шутку на тему: "{update.message.text}"'}
         ]
     )
 
