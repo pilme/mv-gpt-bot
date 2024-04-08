@@ -1,4 +1,6 @@
 import logging
+import asyncio
+import threading
 import os
 
 from enum import Enum
@@ -6,11 +8,32 @@ from telegram import *
 from telegram.ext import *
 from langdetect import detect_langs
 from openai import OpenAI
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+
+
+GPT_MODEL_TYPE = "gpt-3.5-turbo-0125"
+APP_HOST = '0.0.0.0'
+APP_PORT = 8000
+
+
+class GetHandler(BaseHTTPRequestHandler):
+    def _set_headers(self):
+        self.send_response(204)
+        self.end_headers()
+
+    def do_GET(self):
+        self._set_headers()
+
+
+def run_server(handler_class=GetHandler):
+    server_address = (APP_HOST, APP_PORT)
+    httpd = HTTPServer(server_address, handler_class)
+    httpd.serve_forever()
 
 
 class Button:
@@ -25,6 +48,7 @@ class BotMessages:
     GREETINGS = "Привет, я туповатый бот, чтобы продолжить нажми на одну из кнопок"
     STATE_STARTED = "Нажми на одну из кнопок чтобы продолжить"
     STATE_TRANSLATION = "Пришли мне текст для перевода"
+    STATE_TRANSLATION_CONTINUE = "Пришли еще текст или нажми кнопку \"Назад\""
     STATE_CONVERSATION = "Ну давай поговорим"
     STATE_TEXT_CHECK = "Пришли текст для проверки"
     STATE_TEXT_CHECK_CONTINUE = "Пришли еще один текст или нажми кнопку \"Назад\""
@@ -79,7 +103,6 @@ async def change_state(state: State, update: Update, context: ContextTypes.DEFAU
         buttons = [[KeyboardButton(Button.BACK)]]
         await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_TEXT_CHECK,
                                        reply_markup=ReplyKeyboardMarkup(buttons))
-
     if state is State.JOKE:
         buttons = [[KeyboardButton(Button.BACK)]]
         await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_JOKE,
@@ -87,7 +110,7 @@ async def change_state(state: State, update: Update, context: ContextTypes.DEFAU
 
 
 async def check_for_back_pressed(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if Button.BACK in update.message.text:
+    if Button.BACK == update.message.text:
         await change_state(State.STARTED, update, context)
         return True
     return False
@@ -118,16 +141,44 @@ async def handle_buttons_pressed(update: Update, context: ContextTypes.DEFAULT_T
         case Button.JOKE:
             await change_state(State.JOKE, update, context)
         case _:
-            await context.bot.send_message(chat_id=update.effective_chat.id,
-                                           text=BotMessages.CHOOSE_BUTTON)
-
+            await change_state(State.STARTED, update, context)
 
 
 async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_for_back_pressed(update, context):
         return
+
+    await context.bot.send_chat_action(update.effective_chat.id, 'typing')
+
+    if "ru" in detect_language_with_langdetect(update.message.text)[0]:
+        translated_text = translate_from_russian(update.message.text)
+    else:
+        translated_text = translate_to_russian(update.message.text)
+
     await context.bot.send_message(chat_id=update.effective_chat.id,
-                                   text=detect_language_with_langdetect(update.message.text))
+                                   text=translated_text)
+    await context.bot.send_message(chat_id=update.effective_chat.id,
+                                   text=BotMessages.STATE_TRANSLATION_CONTINUE)
+
+
+def translate_from_russian(text_to_translate: str):
+    completion = client.chat.completions.create(
+        model=GPT_MODEL_TYPE,
+        messages=[
+            {"role": "user", "content": f'Переведи этот текст на английский: "{text_to_translate}"'}
+        ]
+    )
+    return completion.choices[0].message.content
+
+
+def translate_to_russian(text_to_translate: str):
+    completion = client.chat.completions.create(
+        model=GPT_MODEL_TYPE,
+        messages=[
+            {"role": "user", "content": f'Переведи этот текст на русский: "{text_to_translate}"'}
+        ]
+    )
+    return completion.choices[0].message.content
 
 
 async def dummy_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -151,40 +202,40 @@ def detect_language_with_langdetect(line):
 def init_messages_context():
     global messagesHistory
     messagesHistory = [{"role": "system",
-                        "content": "You are a poetic assistant, skilled in explaining complex programming concepts "
-                                   "with creative flair."}]
+                        "content": "Ты жизнерадостный в вежливый собеседник, который может ответить на любой вопрос и "
+                                   "объяснить любое явление развернуто и простыми словами. Тебя зовут Анатолий. Тебя "
+                                   "создала Мария Воронова в рамках школьного проекта 7 апреля 2024 года."}]
 
 
 async def conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await check_for_back_pressed(update, context):
+        return
+
+    await context.bot.send_chat_action(update.effective_chat.id, 'typing')
+
     global messagesHistory
-    # Добавить в историю то что ввел пользователь
     messagesHistory.append({"role": "user", "content": update.message.text})
     completion = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model=GPT_MODEL_TYPE,
         messages=messagesHistory
-            # {"role": "system", "content": "You are a poetic assistant, skilled in explaining complex programming
-            # concepts with creative flair."},
     )
-    # Добавить в историю то что отдал чат GPT
     messagesHistory.append({"role": "assistant", "content": completion.choices[0].message.content})
+
     await context.bot.send_message(chat_id=update.effective_chat.id, text=completion.choices[0].message.content)
 
 
 async def text_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_for_back_pressed(update, context):
         return
-    # Добавить в историю то что ввел пользователь
+
+    await context.bot.send_chat_action(update.effective_chat.id, 'typing')
 
     completion = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model=GPT_MODEL_TYPE,
         messages=[
-            #{"role": "system", "content": "You are a poetic assistant, skilled in explaining complex programming concepts with creative flair."},
             {"role": "user", "content": f'Проверь этот текст на ошибки: "{update.message.text}"'}
         ]
-            # {"role": "system", "content": "You are a poetic assistant, skilled in explaining complex programming
-            # concepts with creative flair."},
     )
-    # Добавить в историю то что отдал чат GPT
 
     await context.bot.send_message(chat_id=update.effective_chat.id, text=completion.choices[0].message.content)
     await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_TEXT_CHECK_CONTINUE)
@@ -193,23 +244,21 @@ async def text_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def joke(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_for_back_pressed(update, context):
         return
-    # Добавить в историю то что ввел пользователь
+
+    await context.bot.send_chat_action(update.effective_chat.id, 'typing')
 
     completion = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model=GPT_MODEL_TYPE,
         messages=[
-            #{"role": "system", "content": "You are a poetic assistant, skilled in explaining complex programming concepts with creative flair."},
-            {"role": "user", "content": "Напиши мне шутку о " + update.message.text}
+            {"role": "user", "content": f'Напиши мне шутку на тему: "{update.message.text}"'}
         ]
-            # {"role": "system", "content": "You are a poetic assistant, skilled in explaining complex programming
-            # concepts with creative flair."},
     )
-    # Добавить в историю то что отдал чат GPT
 
     await context.bot.send_message(chat_id=update.effective_chat.id, text=completion.choices[0].message.content)
     await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_JOKE_CONTINUE)
 
 if __name__ == '__main__':
+    threading.Thread(target=run_server).start()
     application = ApplicationBuilder().token(os.environ.get('GPTBOT_API_KEY')).build()
     client = OpenAI()
 
