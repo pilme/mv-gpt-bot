@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import threading
 import os
 
 from enum import Enum
@@ -7,6 +8,7 @@ from telegram import *
 from telegram.ext import *
 from langdetect import detect_langs
 from openai import OpenAI
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -15,6 +17,23 @@ logging.basicConfig(
 
 
 GPT_MODEL_TYPE = "gpt-3.5-turbo-0125"
+APP_HOST = '0.0.0.0'
+APP_PORT = 8000
+
+
+class GetHandler(BaseHTTPRequestHandler):
+    def _set_headers(self):
+        self.send_response(204)
+        self.end_headers()
+
+    def do_GET(self):
+        self._set_headers()
+
+
+def run_server(handler_class=GetHandler):
+    server_address = (APP_HOST, APP_PORT)
+    httpd = HTTPServer(server_address, handler_class)
+    httpd.serve_forever()
 
 
 class Button:
@@ -122,8 +141,7 @@ async def handle_buttons_pressed(update: Update, context: ContextTypes.DEFAULT_T
         case Button.JOKE:
             await change_state(State.JOKE, update, context)
         case _:
-            await context.bot.send_message(chat_id=update.effective_chat.id,
-                                           text=BotMessages.CHOOSE_BUTTON)
+            await change_state(State.STARTED, update, context)
 
 
 async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -240,6 +258,7 @@ async def joke(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_JOKE_CONTINUE)
 
 if __name__ == '__main__':
+    threading.Thread(target=run_server).start()
     application = ApplicationBuilder().token(os.environ.get('GPTBOT_API_KEY')).build()
     client = OpenAI()
 
