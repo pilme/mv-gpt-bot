@@ -199,22 +199,6 @@ def detect_language_with_langdetect(line):
         return "err", 0.0
 
 
-def gpt_initial_conversation_history():
-    return [{"role": "system",
-             "content": "Ты жизнерадостный в вежливый собеседник, который может ответить на любой вопрос и "
-                        "объяснить любое явление развернуто и простыми словами. Ты отвечаешь только на "
-                        "русском языке. Тебя зовут Анатолий. Тебя"
-                        "создала Мария Воронова в рамках школьного проекта 7 апреля 2024 года."}]
-
-
-def gpt_initial_conversation_history():
-    return [{"role": "system",
-             "content": "Ты жизнерадостный в вежливый собеседник, который может ответить на любой вопрос и "
-                        "объяснить любое явление развернуто и простыми словами. Ты отвечаешь только на "
-                        "русском языке. Тебя зовут Анатолий. Тебя"
-                        "создала Мария Воронова в рамках школьного проекта 7 апреля 2024 года."}]
-
-
 async def conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_for_back_pressed(update, context):
         return State.STARTED
