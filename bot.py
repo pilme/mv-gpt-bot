@@ -36,6 +36,18 @@ def run_server(handler_class=GetHandler):
     httpd.serve_forever()
 
 
+KEY_GPT_HISTORY = "key_gpt_history"
+GPT_INITIAL_CONVERSATION_HISTORY = [{"role": "system",
+                                     "content": "Ты жизнерадостный в вежливый собеседник, который может ответить на "
+                                                "любой вопрос и объяснить любое явление развернуто и простыми "
+                                                "словами. Ты отвечаешь только на русском языке. Тебя зовут Анатолий. "
+                                                "Тебя создала Мария Воронова в рамках школьного проекта 7 апреля 2024 "
+                                                "года."}]
+GPT_INITIAL_ASSISTANT_HISTORY = [{"role": "system",
+                                  "content": "Ты ассистент, который отвечает четко, развернуто, без предисловий и "
+                                             "только по-русски"}]
+
+
 class Button:
     TRANSLATION = "Перевод"
     TEXT_CHECK = "Проверка текста на ошибки"
@@ -68,46 +80,19 @@ class State(Enum):
     JOKE = 5
 
 
-currentState: State = State.STARTED
-messagesHistory = []
-
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id,
                                    text=BotMessages.GREETINGS)
-    await change_state(State.STARTED, update, context)
+    buttons = [[KeyboardButton(Button.TRANSLATION)], [KeyboardButton(Button.TEXT_CHECK)],
+               [KeyboardButton(Button.CONVERSATION)], [KeyboardButton(Button.JOKE)]]
+    await context.bot.send_message(chat_id=update.effective_chat.id,
+                                   text=BotMessages.STATE_STARTED,
+                                   reply_markup=ReplyKeyboardMarkup(buttons))
+    return State.STARTED
 
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.COMMAND_UNKNOWN)
-
-
-async def change_state(state: State, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global currentState
-    currentState = state
-    init_messages_context()
-    if state is State.STARTED:
-        buttons = [[KeyboardButton(Button.TRANSLATION)], [KeyboardButton(Button.TEXT_CHECK)],
-                   [KeyboardButton(Button.CONVERSATION)], [KeyboardButton(Button.JOKE)]]
-        await context.bot.send_message(chat_id=update.effective_chat.id,
-                                       text=BotMessages.STATE_STARTED,
-                                       reply_markup=ReplyKeyboardMarkup(buttons))
-    if state is State.TRANSLATION:
-        buttons = [[KeyboardButton(Button.BACK)]]
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_TRANSLATION,
-                                       reply_markup=ReplyKeyboardMarkup(buttons))
-    if state is State.CONVERSATION:
-        buttons = [[KeyboardButton(Button.BACK)]]
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_CONVERSATION,
-                                       reply_markup=ReplyKeyboardMarkup(buttons))
-    if state is State.TEXT_CHECK:
-        buttons = [[KeyboardButton(Button.BACK)]]
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_TEXT_CHECK,
-                                       reply_markup=ReplyKeyboardMarkup(buttons))
-    if state is State.JOKE:
-        buttons = [[KeyboardButton(Button.BACK)]]
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_JOKE,
-                                       reply_markup=ReplyKeyboardMarkup(buttons))
 
 
 async def check_for_back_pressed(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -117,54 +102,65 @@ async def check_for_back_pressed(update: Update, context: ContextTypes.DEFAULT_T
     return False
 
 
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if await handle_buttons_pressed(update, context):
-        return
-    match currentState:
-        case State.STARTED:
-            await change_state(State.STARTED, update, context)
-            # await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.CHOOSE_BUTTON)
-        case State.TRANSLATION:
-            await translate(update, context)
-        case State.CONVERSATION:
-            await conversation(update, context)
-        case State.TEXT_CHECK:
-            await text_check(update, context)
-        case State.JOKE:
-            await joke(update, context)
+async def change_state(state: State, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if state is State.STARTED:
+        context.user_data[KEY_GPT_HISTORY] = []
+        buttons = [[KeyboardButton(Button.TRANSLATION)], [KeyboardButton(Button.TEXT_CHECK)],
+                   [KeyboardButton(Button.CONVERSATION)], [KeyboardButton(Button.JOKE)]]
+        await context.bot.send_message(chat_id=update.effective_chat.id,
+                                       text=BotMessages.STATE_STARTED,
+                                       reply_markup=ReplyKeyboardMarkup(buttons))
+    if state is State.TRANSLATION:
+        context.user_data[KEY_GPT_HISTORY] = GPT_INITIAL_ASSISTANT_HISTORY
+        buttons = [[KeyboardButton(Button.BACK)]]
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_TRANSLATION,
+                                       reply_markup=ReplyKeyboardMarkup(buttons))
+    if state is State.CONVERSATION:
+        context.user_data[KEY_GPT_HISTORY] = GPT_INITIAL_CONVERSATION_HISTORY
+        buttons = [[KeyboardButton(Button.BACK)]]
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_CONVERSATION,
+                                       reply_markup=ReplyKeyboardMarkup(buttons))
+    if state is State.TEXT_CHECK:
+        context.user_data[KEY_GPT_HISTORY] = GPT_INITIAL_ASSISTANT_HISTORY
+        buttons = [[KeyboardButton(Button.BACK)]]
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_TEXT_CHECK,
+                                       reply_markup=ReplyKeyboardMarkup(buttons))
+    if state is State.JOKE:
+        context.user_data[KEY_GPT_HISTORY] = GPT_INITIAL_ASSISTANT_HISTORY
+        buttons = [[KeyboardButton(Button.BACK)]]
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.STATE_JOKE,
+                                       reply_markup=ReplyKeyboardMarkup(buttons))
 
 
 async def handle_buttons_pressed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     match update.message.text:
         case Button.TRANSLATION:
             await change_state(State.TRANSLATION, update, context)
-            return True
+            return State.TRANSLATION
         case Button.TEXT_CHECK:
             await change_state(State.TEXT_CHECK, update, context)
-            return True
+            return State.TEXT_CHECK
         case Button.CONVERSATION:
             await change_state(State.CONVERSATION, update, context)
-            return True
+            return State.CONVERSATION
         case Button.JOKE:
             await change_state(State.JOKE, update, context)
-            return True
-        case Button.BACK:
-            await change_state(State.STARTED, update, context)
-            return True
+            return State.JOKE
         case _:
-            return False
+            await change_state(State.STARTED, update, context)
+            return State.STARTED
 
 
 async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_for_back_pressed(update, context):
-        return
+        return State.STARTED
 
     await context.bot.send_chat_action(update.effective_chat.id, 'typing')
 
     if "ru" in detect_language_with_langdetect(update.message.text)[0]:
-        translated_text = translate_from_russian(update.message.text)
+        translated_text = translate_from_russian(update.message.text, context)
     else:
-        translated_text = translate_to_russian(update.message.text)
+        translated_text = translate_to_russian(update.message.text, context)
 
     await context.bot.send_message(chat_id=update.effective_chat.id,
                                    text=translated_text)
@@ -172,30 +168,24 @@ async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                    text=BotMessages.STATE_TRANSLATION_CONTINUE)
 
 
-def translate_from_russian(text_to_translate: str):
-    init_messages_context()
-    messagesHistory.append({"role": "user", "content": f'Переведи этот текст на английский: "{text_to_translate}"'})
+def translate_from_russian(text_to_translate: str, context: ContextTypes.DEFAULT_TYPE):
+    messages = context.user_data[KEY_GPT_HISTORY].copy()
+    messages.append({"role": "user", "content": f'Переведи этот текст на английский: "{text_to_translate}"'})
     completion = client.chat.completions.create(
         model=GPT_MODEL_TYPE,
-        messages=messagesHistory
+        messages=messages
     )
     return completion.choices[0].message.content
 
 
-def translate_to_russian(text_to_translate: str):
-    init_messages_context()
-    messagesHistory.append({"role": "user", "content": f'Переведи этот текст на русский: "{text_to_translate}"'})
+def translate_to_russian(text_to_translate: str, context: ContextTypes.DEFAULT_TYPE):
+    messages = context.user_data[KEY_GPT_HISTORY].copy()
+    messages.append({"role": "user", "content": f'Переведи этот текст на русский: "{text_to_translate}"'})
     completion = client.chat.completions.create(
         model=GPT_MODEL_TYPE,
-        messages=messagesHistory
+        messages=messages
     )
     return completion.choices[0].message.content
-
-
-async def dummy_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if await check_for_back_pressed(update, context):
-        return
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=BotMessages.PLACEHOLDER)
 
 
 # noinspection PyBroadException
@@ -209,43 +199,48 @@ def detect_language_with_langdetect(line):
         return "err", 0.0
 
 
-def init_messages_context():
-    global messagesHistory
-    messagesHistory = [{"role": "system",
-                        "content": "Ты жизнерадостный в вежливый собеседник, который может ответить на любой вопрос и "
-                                   "объяснить любое явление развернуто и простыми словами. Ты отвечаешь только на "
-                                   "русском языке. Тебя зовут Анатолий. Тебя"
-                                   "создала Мария Воронова в рамках школьного проекта 7 апреля 2024 года."}]
+def gpt_initial_conversation_history():
+    return [{"role": "system",
+             "content": "Ты жизнерадостный в вежливый собеседник, который может ответить на любой вопрос и "
+                        "объяснить любое явление развернуто и простыми словами. Ты отвечаешь только на "
+                        "русском языке. Тебя зовут Анатолий. Тебя"
+                        "создала Мария Воронова в рамках школьного проекта 7 апреля 2024 года."}]
+
+
+def gpt_initial_conversation_history():
+    return [{"role": "system",
+             "content": "Ты жизнерадостный в вежливый собеседник, который может ответить на любой вопрос и "
+                        "объяснить любое явление развернуто и простыми словами. Ты отвечаешь только на "
+                        "русском языке. Тебя зовут Анатолий. Тебя"
+                        "создала Мария Воронова в рамках школьного проекта 7 апреля 2024 года."}]
 
 
 async def conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_for_back_pressed(update, context):
-        return
+        return State.STARTED
 
     await context.bot.send_chat_action(update.effective_chat.id, 'typing')
-
-    global messagesHistory
-    messagesHistory.append({"role": "user", "content": update.message.text})
+    context.user_data[KEY_GPT_HISTORY].append({"role": "user", "content": update.message.text})
     completion = client.chat.completions.create(
         model=GPT_MODEL_TYPE,
-        messages=messagesHistory
+        messages=context.user_data[KEY_GPT_HISTORY]
     )
-    messagesHistory.append({"role": "assistant", "content": completion.choices[0].message.content})
+    context.user_data[KEY_GPT_HISTORY].append({"role": "assistant", "content": completion.choices[0].message.content})
 
     await context.bot.send_message(chat_id=update.effective_chat.id, text=completion.choices[0].message.content)
 
 
 async def text_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_for_back_pressed(update, context):
-        return
+        return State.STARTED
 
     await context.bot.send_chat_action(update.effective_chat.id, 'typing')
 
-    init_messages_context()
-    messagesHistory.append({"role": "user", "content": f'Проверь этот текст на ошибки: "{update.message.text}"'})
+    messages = context.user_data[KEY_GPT_HISTORY].copy()
+    messages.append({"role": "user", "content": f'Проверь этот текст на ошибки: "{update.message.text}"'})
     completion = client.chat.completions.create(
         model=GPT_MODEL_TYPE,
-        messages=messagesHistory
+        messages=messages
     )
 
     await context.bot.send_message(chat_id=update.effective_chat.id, text=completion.choices[0].message.content)
@@ -254,15 +249,15 @@ async def text_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def joke(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_for_back_pressed(update, context):
-        return
+        return State.STARTED
 
     await context.bot.send_chat_action(update.effective_chat.id, 'typing')
 
-    init_messages_context()
-    messagesHistory.append({"role": "user", "content": f'Напиши мне шутку на тему: "{update.message.text}"'})
+    messages = context.user_data[KEY_GPT_HISTORY].copy()
+    messages.append({"role": "user", "content": f'Напиши мне шутку на тему: "{update.message.text}"'})
     completion = client.chat.completions.create(
         model=GPT_MODEL_TYPE,
-        messages=messagesHistory
+        messages=messages
     )
 
     await context.bot.send_message(chat_id=update.effective_chat.id, text=completion.choices[0].message.content)
@@ -273,12 +268,20 @@ if __name__ == '__main__':
     application = ApplicationBuilder().token(os.environ.get('GPTBOT_API_KEY')).build()
     client = OpenAI()
 
-    start_handler = CommandHandler('start', start)
-    echo_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), echo)
-    unknown_handler = MessageHandler(filters.ALL, unknown)
+    conv_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.ALL, start)],
+        states={
+            State.STARTED: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons_pressed)],
+            State.TRANSLATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, translate)],
+            State.TEXT_CHECK: [MessageHandler(filters.TEXT & ~filters.COMMAND, text_check)],
+            State.CONVERSATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, conversation)],
+            State.JOKE: [MessageHandler(filters.TEXT & ~filters.COMMAND, joke)],
+        },
+        fallbacks=[
+            CommandHandler("start", start),
+            MessageHandler(filters.ALL, unknown)
+        ],
+    )
 
-    application.add_handler(start_handler)
-    application.add_handler(echo_handler)
-    application.add_handler(unknown_handler)
-
+    application.add_handler(conv_handler)
     application.run_polling()
